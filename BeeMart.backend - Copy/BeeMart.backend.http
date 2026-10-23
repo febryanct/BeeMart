@@ -1,6 +1,0 @@
-@BeeMart.backend_HostAddress = http://localhost:5251
-
-GET {{BeeMart.backend_HostAddress}}/weatherforecast/
-Accept: application/json
-
-###
