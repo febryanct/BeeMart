@@ -1,0 +1,249 @@
+﻿@{
+    ViewData["Title"] = "New Transaction";
+    Layout = null;
+}
+
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="utf-8" />
+    <title>BeeMart - POS</title>
+    <link rel="stylesheet" href="~/css/site.css" />
+</head>
+<body>
+    <!-- Navbar -->
+    <div class="navbar">
+        <div class="navbar-brand">BeeMart</div>
+        <div class="navbar-info">
+            <span id="dateTimeDisplay"></span>
+            <span id="userInfoDisplay"></span>
+            <button class="btn-logout" onclick="logout()">Logout</button>
+        </div>
+    </div>
+
+    <!-- Tabs -->
+    <div class="tabs-container">
+        <button class="tab-btn active">New Transaction</button>
+        <button class="tab-btn" onclick="window.location.href='/History/Index'">History Transaction</button>
+    </div>
+
+    <!-- Main Content -->
+    <div class="main-content">
+        <div class="invoice-banner" id="invoiceDisplay">Invoice No: -</div>
+
+        <p style="margin-bottom: 5px; font-size: 14px;">Cari Barang (Ketik: Apel / Susu, lalu tekan Enter)</p>
+        <input type="text" class="search-box" id="keyword" placeholder="Ketik nama barang..." onkeypress="handleSearch(event)" />
+
+        <!-- Tabel Pencarian -->
+        <table class="table-custom" id="searchTable" style="display: none;">
+            <thead>
+                <tr>
+                    <th>Nama Barang</th>
+                    <th>Berat</th>
+                    <th>Stock</th>
+                    <th>Harga</th>
+                    <th>Diskon</th>
+                    <th>Aksi</th>
+                </tr>
+            </thead>
+            <tbody id="searchResultBody"></tbody>
+        </table>
+
+        <!-- Section Barang Terpilih -->
+        <div class="selected-item-box" id="selectedItemBox">
+            <strong style="color: #1976D2;">Barang Terpilih: <span id="selName"></span></strong>
+            <div class="selected-item-flex">
+                <div>Harga Satuan:<br><strong>Rp <span id="selPrice"></span></strong></div>
+                <div>Sisa Stock:<br><strong id="selStock"></strong></div>
+                <div>Qty: <input type="number" id="selQty" min="1" value="1" style="width: 60px; padding: 5px;" /></div>
+                <button class="btn-action" onclick="addToCart()">Masukkan ke Keranjang</button>
+            </div>
+        </div>
+
+        <h3 style="font-size: 16px; margin-top: 30px;">Daftar Belanjaan</h3>
+
+        <!-- Tabel Keranjang -->
+        <table class="table-custom">
+            <thead>
+                <tr>
+                    <th>Nama Barang</th>
+                    <th>Harga</th>
+                    <th>Diskon</th>
+                    <th>Qty</th>
+                    <th>Subtotal</th>
+                    <th>Aksi</th>
+                </tr>
+            </thead>
+            <tbody id="cartTableBody"></tbody>
+        </table>
+
+        <div class="total-text">Total: Rp <span id="totalPrice">0</span></div>
+
+        <div class="payment-section">
+            <label>Metode Pembayaran:</label>
+            <select id="paymentMethod" style="padding: 5px; min-width: 150px;"></select>
+        </div>
+
+        <button class="btn-submit-tx" onclick="submitTransaction()">Submit Transaksi</button>
+    </div>
+
+    <script>
+            const API_URL = 'https://localhost:7156/api';
+            let user = null;
+            let cart = [];
+            let currentSelectedProduct = null;
+
+            window.onload = async function () {
+                const userSession = sessionStorage.getItem('user');
+                if (!userSession) { window.location.href = '/Auth/Login'; return; }
+                user = JSON.parse(userSession);
+
+                // Set User Info di Navbar
+                document.getElementById('userInfoDisplay').innerText = `| Role: ${user.role === 'Cashier' ? 'Cashier' : 'Admin'} | Login: ${user.username}`;
+
+                updateClock();
+                setInterval(updateClock, 1000);
+
+                generateDisplayInvoice();
+                await loadPaymentMethods();
+            }
+
+            function updateClock() {
+                const now = new Date();
+                const dateStr = now.toLocaleDateString('id-ID', { day: '2-digit', month: '2-digit', year: 'numeric' });
+                const timeStr = now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                document.getElementById('dateTimeDisplay').innerText = `${dateStr}, ${timeStr.replace(/\./g, ':')}`;
+            }
+
+            function generateDisplayInvoice() {
+                // Simulasi invoice format [5 digit userID][ddmmyy][3 digit running number]
+                const id = user.idUser.padStart(5, '0');
+                const d = new Date();
+                const dateStr = `${String(d.getDate()).padStart(2, '0')}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getFullYear()).slice(-2)}`;
+                document.getElementById('invoiceDisplay').innerText = `Invoice No: ${id}${dateStr}001`;
+            }
+
+            async function loadPaymentMethods() {
+                const res = await fetch(`${API_URL}/Transaction/payment-methods`);
+                const methods = await res.json();
+                const sel = document.getElementById('paymentMethod');
+                methods.forEach(m => sel.innerHTML += `<option value="${m.idPaymentMethod}">${m.methodName}</option>`);
+            }
+
+            async function handleSearch(e) {
+                if (e.key === 'Enter') {
+                    const keyword = document.getElementById('keyword').value;
+                    const res = await fetch(`${API_URL}/Transaction/products?keyword=${keyword}`);
+                    const products = await res.json();
+
+                    const tbody = document.getElementById('searchResultBody');
+                    tbody.innerHTML = '';
+                    document.getElementById('searchTable').style.display = 'table';
+                    document.getElementById('selectedItemBox').style.display = 'none';
+
+                    products.forEach(p => {
+                        tbody.innerHTML += `
+                                    <tr>
+                                        <td>${p.name}</td>
+                                        <td>${p.weight || 1} Kg</td>
+                                        <td>${p.stock}</td>
+                                        <td>Rp ${p.price.toLocaleString('id-ID')}</td>
+                                        <td>${p.discount}%</td>
+                                        <td><button class="btn-action" onclick='selectProduct(${JSON.stringify(p)})'>Pilih</button></td>
+                                    </tr>
+                                `;
+                    });
+                }
+            }
+
+            function selectProduct(product) {
+                currentSelectedProduct = product;
+                document.getElementById('selectedItemBox').style.display = 'block';
+                document.getElementById('selName').innerText = product.name;
+                document.getElementById('selPrice').innerText = product.price.toLocaleString('id-ID');
+                document.getElementById('selStock').innerText = product.stock;
+                document.getElementById('selQty').value = 1;
+            }
+
+            function addToCart() {
+                const qty = parseInt(document.getElementById('selQty').value);
+                if (qty > currentSelectedProduct.stock) {
+                    alert('Jumlah barang yang dimasukkan melebihi sisa stok.');
+                    return;
+                }
+
+                const existing = cart.find(c => c.idProduct === currentSelectedProduct.idProduct);
+                if (existing) {
+                    if (existing.qty + qty > currentSelectedProduct.stock) {
+                        alert('Total quantity di keranjang melebihi stok tersedia!');
+                        return;
+                    }
+                    existing.qty += qty;
+                } else {
+                    cart.push({ ...currentSelectedProduct, qty: qty });
+                }
+
+                document.getElementById('selectedItemBox').style.display = 'none';
+                renderCart();
+            }
+
+            function renderCart() {
+                const tbody = document.getElementById('cartTableBody');
+                tbody.innerHTML = '';
+                let total = 0;
+
+                cart.forEach((c, index) => {
+                    const subtotal = (c.price - (c.price * (c.discount / 100))) * c.qty;
+                    total += subtotal;
+                    tbody.innerHTML += `
+                                <tr>
+                                    <td>${c.name}</td>
+                                    <td>Rp ${c.price.toLocaleString('id-ID')}</td>
+                                    <td>${c.discount}%</td>
+                                    <td>${c.qty}</td>
+                                    <td>Rp ${subtotal.toLocaleString('id-ID')}</td>
+                                    <td><button class="btn-action btn-delete" onclick="removeFromCart(${index})">Hapus</button></td>
+                                </tr>
+                            `;
+                });
+                document.getElementById('totalPrice').innerText = total.toLocaleString('id-ID');
+            }
+
+            function removeFromCart(index) {
+                cart.splice(index, 1);
+                renderCart();
+            }
+
+            async function submitTransaction() {
+                if (cart.length === 0) return alert('Keranjang kosong!');
+
+                const payload = {
+                    idUser: user.idUser,
+                    idPaymentMethod: parseInt(document.getElementById('paymentMethod').value),
+                    items: cart.map(c => ({ idProduct: c.idProduct, qty: c.qty, price: c.price, discount: c.discount }))
+                };
+
+                const res = await fetch(`${API_URL}/Transaction/submit`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (res.ok) {
+                    const result = await res.json();
+                    alert(`Transaksi Sukses! No: ${result.invoiceNo}`);
+                    cart = [];
+                    renderCart();
+                    document.getElementById('keyword').value = '';
+                    document.getElementById('searchTable').style.display = 'none';
+                    generateDisplayInvoice();
+                }
+            }
+
+            function logout() {
+                sessionStorage.clear();
+                window.location.href = '/Auth/Login';
+            }
+    </script>
+</body>
+</html>

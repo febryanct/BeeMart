@@ -1,0 +1,126 @@
+﻿@{
+    ViewData["Title"] = "Riwayat Transaksi";
+    Layout = null;
+}
+
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="utf-8" />
+    <title>BeeMart - Riwayat</title>
+    <link rel="stylesheet" href="~/css/site.css" />
+</head>
+<body style="background-color: #e8f0f8; margin: 0; padding-top: 20px;">
+
+    <div class="history-container">
+        <h2>Riwayat Transaksi</h2>
+
+        <div class="filter-section">
+            <div class="form-group" style="margin-bottom: 0;">
+                <label>Filter Tanggal:</label>
+                <input type="date" id="filterDate" onchange="loadHistory(1)" />
+            </div>
+            <button class="btn-sm" onclick="window.location.href='/Transaction/Index'" style="margin-left: auto;">Kembali ke Kasir</button>
+        </div>
+
+        <table class="styled-table">
+            <thead>
+                <tr>
+                    <th>No Transaksi</th>
+                    <th>Tanggal & Jam</th>
+                    <th>Kasir</th>
+                    <th>Jml Item</th>
+                    <th>Pembayaran</th>
+                    <th>Total Harga</th>
+                </tr>
+            </thead>
+            <tbody id="historyTableBody">
+                <!-- Data dari API akan masuk ke sini -->
+            </tbody>
+        </table>
+
+        <div class="pagination">
+            <button class="btn-sm" id="btnPrev" onclick="changePage(-1)">Sebelumnya</button>
+            <span id="pageInfo">Halaman 1 dari 1</span>
+            <button class="btn-sm" id="btnNext" onclick="changePage(1)">Selanjutnya</button>
+        </div>
+    </div>
+
+    <script>
+            const API_URL = 'https://localhost:7156/api';
+            let user = null;
+            let currentPage = 1;
+            let totalPages = 1;
+
+            // Saat halaman dimuat
+            window.onload = function () {
+                const userSession = sessionStorage.getItem('user');
+                if (!userSession) {
+                    alert('Anda harus login terlebih dahulu!');
+                    window.location.href = '/Auth/Login';
+                    return;
+                }
+                user = JSON.parse(userSession);
+
+                // Set default tanggal hari ini
+                document.getElementById('filterDate').valueAsDate = new Date();
+                loadHistory(1);
+            }
+
+            async function loadHistory(page) {
+                currentPage = page;
+                const date = document.getElementById('filterDate').value;
+
+                // Siapkan parameter URL
+                const url = `${API_URL}/History?date=${date}&role=${user.role}&idUser=${user.idUser}&page=${currentPage}`;
+
+                try {
+                    const response = await fetch(url);
+                    const result = await response.json();
+
+                    totalPages = result.totalPages;
+                    renderTable(result.data);
+                    updatePagination();
+                } catch (error) {
+                    console.error('Gagal memuat riwayat:', error);
+                }
+            }
+
+            function renderTable(data) {
+                const tbody = document.getElementById('historyTableBody');
+                tbody.innerHTML = '';
+
+                if (data.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="6" style="text-align: center;">Tidak ada transaksi pada tanggal ini.</td></tr>';
+                    return;
+                }
+
+                data.forEach(item => {
+                    tbody.innerHTML += `
+                                <tr>
+                                    <td>${item.noTransaksi}</td>
+                                    <td>${item.tanggalJam}</td>
+                                    <td>${item.kasir}</td>
+                                    <td>${item.jmlItem}</td>
+                                    <td>${item.pembayaran}</td>
+                                    <td>Rp ${item.totalHarga.toLocaleString('id-ID')}</td>
+                                </tr>
+                            `;
+                });
+            }
+
+            function updatePagination() {
+                document.getElementById('pageInfo').innerText = `Halaman ${currentPage} dari ${totalPages}`;
+                document.getElementById('btnPrev').disabled = currentPage <= 1;
+                document.getElementById('btnNext').disabled = currentPage >= totalPages;
+            }
+
+            function changePage(direction) {
+                const newPage = currentPage + direction;
+                if (newPage >= 1 && newPage <= totalPages) {
+                    loadHistory(newPage);
+                }
+            }
+    </script>
+</body>
+</html>
