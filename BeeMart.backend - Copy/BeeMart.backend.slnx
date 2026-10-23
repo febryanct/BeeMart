@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="../BeeMart.webclient/BeeMart.webclient.csproj" Id="bba76b8d-faac-4be9-9fc8-748617ece0de" />
+  <Project Path="BeeMart.backend.csproj" />
+</Solution>
